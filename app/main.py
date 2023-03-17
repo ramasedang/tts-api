@@ -5,9 +5,14 @@ from gtts import gTTS
 import gtts.lang
 import os
 import base64
+import re
+import requests
 app = FastAPI()
 
 origins = ["*"]
+
+#variables cnn 
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +32,11 @@ def get_tts(text, lang):
     tts = gTTS(text=text, lang=lang)
     #save to directory /tmp
     tts.save("/tmp/tts.mp3")
+
+def audio_to_base64():
+    with open("/tmp/tts.mp3", "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()  
     
 
 class Msg(BaseModel):
@@ -65,3 +75,30 @@ async def tts(tts: TTS):
     with open("/tmp/tts.mp3", "rb") as f:
         data = f.read()
     return {"audio": base64.b64encode(data).decode(), "mime": "audio/mpeg" , "ext": "mp3" , "lang": tts.lang}
+
+@app.get("/cnn")
+#params: url_cnn
+async def cnn(url_cnn: str):
+    #to string
+    new_url = "http://8.219.195.118:5000/detail?url=" + url_cnn
+    response = requests.get(new_url)
+    isi = response.json()
+    berita = isi['data'][0]['body']
+    berita = re.sub(r"SCROLL TO RESUME CONTENT|ADVERTISEMENT", "", berita)
+
+    # hapus kalimat "Lihat Juga :" dan kalimat setelahnya
+    berita = re.sub(r"Lihat Juga\s*:.+?\n", "", berita)
+
+    # hapus spasi awal dan akhir di setiap baris
+    berita = re.sub(r"^\s+|\s+$", "", berita, flags=re.MULTILINE)
+    
+    # hapus \n di tengah kalimat dan \
+    berita = re.sub(r"(\w)\n(\w)", r"\1 \2", berita)
+
+    # gabungkan setiap baris menjadi satu paragraf
+    berita = re.sub(r"\n+", "\n", berita)
+    berita = berita.split("Lihat Juga")[0].strip()
+    get_tts(berita, "id")
+    with open("/tmp/tts.mp3", "rb") as f:
+        data = f.read()
+    return {"audio": base64.b64encode(data).decode(), "mime": "audio/mpeg" , "ext": "mp3" , "lang": "id"}
